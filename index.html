@@ -413,6 +413,7 @@ function showResult(ok, given) {
   $("btn-next").textContent = idx + 1 === pool.length ? "결과 보기" : "다음 문제";
   $("cmt-sec").style.display = "block";
   renderComments();
+  refreshComments(); // 웹서버 모드: 다른 사람이 새로 단 댓글 반영
 }
 $("btn-next").onclick = () => { idx++; saveSession(); if (idx < pool.length) render(); else finish(); };
 $("btn-prev").onclick = () => { if (idx > 0) { idx--; saveSession(); render(); } };
@@ -496,13 +497,25 @@ $("btn-dl-end").onclick = downloadReports;
 updateDlBtns();
 
 // ---- 댓글 (아티팩트 공유 저장: comments.json) ----
-let artNS = null, comments = {}, cmtReady = false;
+let artNS = null, comments = {}, cmtReady = false, apiMode = false, cmtRefreshing = false;
 const qkey = q => { let h = 5381; const s = q.c + "|" + q.q; for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) >>> 0; return "q" + h.toString(36); };
 async function initComments() {
-  try { const r = await fetch("comments.json", { cache: "no-store" }); if (r.ok) comments = await r.json(); } catch {}
   try { if (window.claude && window.claude.use) artNS = await window.claude.use("artifact"); } catch {}
+  if (artNS) {
+    // 아티팩트 모드: 아티팩트 내 comments.json 사용
+    try { const r = await fetch("comments.json", { cache: "no-store" }); if (r.ok) comments = await r.json(); } catch {}
+  } else {
+    // 웹서버(Vercel) 모드: /api/comments 사용
+    try { const r = await fetch("/api/comments", { cache: "no-store" }); if (r.ok) { comments = await r.json(); apiMode = true; } } catch {}
+  }
   cmtReady = true;
   if ($("cmt-sec").style.display === "block") renderComments();
+}
+async function refreshComments() {
+  if (!apiMode || cmtRefreshing) return;
+  cmtRefreshing = true;
+  try { const r = await fetch("/api/comments", { cache: "no-store" }); if (r.ok) { comments = await r.json(); if ($("cmt-sec").style.display === "block") renderComments(); } } catch {}
+  cmtRefreshing = false;
 }
 function renderComments() {
   const q = pool[idx]; if (!q) return;
@@ -516,8 +529,8 @@ function renderComments() {
     const b = document.createElement("div"); b.className = "cmt-body"; b.textContent = cm.text;
     d.appendChild(h); d.appendChild(b); list.appendChild(d);
   });
-  $("cmt-form").style.display = artNS ? "flex" : "none";
-  if (!artNS) $("cmt-note").textContent = cmtReady ? "댓글 작성은 공유 링크(아티팩트)에서 열었을 때만 가능합니다." : "댓글 불러오는 중...";
+  $("cmt-form").style.display = (artNS || apiMode) ? "flex" : "none";
+  if (!artNS && !apiMode) $("cmt-note").textContent = cmtReady ? "댓글 작성은 웹사이트(bnk-somae.vercel.app) 또는 공유 링크(아티팩트)에서 가능합니다." : "댓글 불러오는 중...";
   else if (!$("cmt-note").dataset.keep) $("cmt-note").textContent = "";
   // 충돌 새로고침으로 보존된 작성 중 댓글 복원
   try {
@@ -531,11 +544,26 @@ function renderComments() {
 }
 try { $("cmt-name").value = localStorage.getItem("quiz-nick") || ""; } catch {}
 $("cmt-send").onclick = async () => {
-  if (!artNS) return;
+  if (!artNS && !apiMode) return;
   const name = $("cmt-name").value.trim() || "익명";
   const text = $("cmt-text").value.trim(); if (!text) return;
   try { localStorage.setItem("quiz-nick", name); } catch {}
   const q = pool[idx], k = qkey(q);
+  if (apiMode) {
+    // 웹서버 모드: API로 저장 (충돌·새로고침 걱정 없음)
+    $("cmt-send").disabled = true; $("cmt-note").textContent = "저장 중...";
+    try {
+      const r = await fetch("/api/comments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ k, name, text }) });
+      if (!r.ok) throw new Error("api " + r.status);
+      comments[k] = (await r.json()).list;
+      $("cmt-text").value = ""; $("cmt-note").textContent = "";
+      renderComments();
+    } catch {
+      $("cmt-note").textContent = "저장에 실패했습니다. 잠시 후 다시 시도해주세요.";
+    }
+    $("cmt-send").disabled = false;
+    return;
+  }
   (comments[k] = comments[k] || []).push({ name, text, time: new Date().toLocaleString("ko-KR") });
   $("cmt-send").disabled = true; $("cmt-note").textContent = "저장 중...";
   try {
