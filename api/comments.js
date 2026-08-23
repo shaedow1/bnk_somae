@@ -52,7 +52,10 @@ module.exports = async (req, res) => {
           body: JSON.stringify(body),
         });
         if (w.ok) return res.status(200).json({ list: data[k] });
-        if (w.status !== 409 && w.status !== 422) throw new Error("github write " + w.status);
+        if (w.status !== 409 && w.status !== 422) {
+          const detail = await w.text().catch(() => "");
+          throw new Error("github write " + w.status + ": " + detail.slice(0, 300));
+        }
         // 동시 저장 충돌 → 다시 읽어서 재시도
       }
       return res.status(503).json({ error: "conflict" });
