@@ -108,6 +108,7 @@
       <div class="seg" id="f-known">
         <button data-v="제외" class="on">제외</button><button data-v="포함">포함</button>
       </div></div>
+    <button class="ghost" id="btn-resume" style="display:none; margin-bottom:10px"></button>
     <button class="big" id="btn-start"></button>
     <button class="dlbtn" id="btn-dl-start" style="display:none"></button>
   </div>
@@ -115,6 +116,7 @@
   <div id="screen-quiz" class="card" style="display:none">
     <div class="meta">
       <button class="prevbtn" id="btn-prev">← 이전</button>
+      <button class="prevbtn" id="btn-save-exit">💾 저장 후 홈</button>
       <span class="badge b-cat" id="q-cat"></span>
       <span class="badge b-src" id="q-src"></span>
       <span class="badge b-type" id="q-type"></span>
@@ -502,7 +504,8 @@ $("btn-next").onclick = () => { idx++; saveSession(); if (idx < pool.length) ren
 $("btn-prev").onclick = () => { if (idx > 0) { idx--; saveSession(); render(); } };
 
 function finish() {
-  try { sessionStorage.removeItem("quiz-session"); } catch {}
+  try { sessionStorage.removeItem("quiz-session"); localStorage.removeItem(saveKey()); } catch {}
+  updateResumeBtn();
   const correct = answers.filter(a => a && a.ok).length;
   const wrongs = pool.filter((q, i) => answers[i] && !answers[i].ok);
   $("screen-quiz").style.display = "none"; $("screen-end").style.display = "block";
@@ -524,7 +527,35 @@ function finish() {
   updateDlBtns();
 }
 $("btn-retry").onclick = () => { pool = window._wrongs.slice(); startRun(); };
-$("btn-home").onclick = () => { $("screen-end").style.display = "none"; $("screen-start").style.display = "block"; updateStartBtn(); updateDlBtns(); };
+$("btn-home").onclick = () => { $("screen-end").style.display = "none"; $("screen-start").style.display = "block"; updateStartBtn(); updateDlBtns(); updateResumeBtn(); };
+
+// ---- 중간 저장 & 이어서 풀기 (닉네임별) ----
+const saveKey = () => "quiz-save:" + (($("nick-input").value.trim()) || "익명");
+$("btn-save-exit").onclick = () => {
+  try { localStorage.setItem(saveKey(), JSON.stringify({ poolIdx: pool.map(q => Q.indexOf(q)), answers, idx })); } catch {}
+  try { sessionStorage.removeItem("quiz-session"); } catch {}
+  $("screen-quiz").style.display = "none"; $("screen-start").style.display = "block";
+  updateStartBtn(); updateDlBtns(); updateResumeBtn();
+};
+function updateResumeBtn() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(saveKey())); } catch {}
+  const b = $("btn-resume");
+  if (s && s.poolIdx && s.poolIdx.length) {
+    const done = (s.answers || []).filter(Boolean).length;
+    b.style.display = "block";
+    b.textContent = "▶ 이어서 풀기 (진행 " + done + " / " + s.poolIdx.length + ")";
+  } else b.style.display = "none";
+}
+$("btn-resume").onclick = () => {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(saveKey())); } catch {}
+  if (!s || !s.poolIdx || !s.poolIdx.length) { updateResumeBtn(); return; }
+  pool = s.poolIdx.map(i => Q[i]).filter(Boolean);
+  answers = s.answers || []; idx = Math.min(s.idx || 0, pool.length - 1);
+  $("screen-start").style.display = "none"; $("screen-end").style.display = "none";
+  $("screen-quiz").style.display = "block"; render();
+};
 updateStartBtn();
 
 // ---- 문제 제보 ----
@@ -714,9 +745,11 @@ $("nick-input").addEventListener("change", () => {
   try { localStorage.setItem("quiz-nick", nick()); } catch {}
   $("cmt-name").value = $("nick-input").value.trim();
   loadKnown(); // 닉네임이 바뀌면 해당 닉네임의 학습기록 로드
+  updateResumeBtn(); // 닉네임별 저장 진도 갱신
 });
 loadKnownLocal();
 updateStartBtn();
+updateResumeBtn();
 
 // ---- 세션 복원 (댓글 등록 시 다른 뷰가 새로고침되므로 진도 보존) ----
 function saveSession() {
