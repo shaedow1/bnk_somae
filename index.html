@@ -57,14 +57,6 @@
   .ghost { width: 100%; padding: 14px; font-size: 15px; background: #fff; color: #1a56db; border: 1px solid #1a56db; border-radius: 8px; cursor: pointer; font-weight: bold; }
   .prevbtn { padding: 2px 10px; border: 1px solid #ccd; background: #fff; border-radius: 999px; cursor: pointer; font-size: 13px; color: #556; }
   .prevbtn:disabled { opacity: .4; cursor: default; }
-  .report { margin-top: 20px; border-top: 1px dashed #dde; padding-top: 10px; }
-  .rep-toggle { background: none; border: none; color: #98a; font-size: 13px; cursor: pointer; padding: 0; }
-  #rep-box { margin-top: 8px; }
-  #rep-box textarea { width: 100%; min-height: 70px; padding: 10px; font-size: 14px; border: 1px solid #ccd; border-radius: 8px; font-family: inherit; resize: vertical; }
-  #rep-box .rep-row { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
-  #rep-send { padding: 8px 16px; background: #b45309; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
-  #rep-msg { font-size: 13px; color: #15803d; }
-  .dlbtn { width: 100%; padding: 12px; font-size: 14px; background: #fff; color: #b45309; border: 1px solid #b45309; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 10px; }
   .nickbox { width: 100%; padding: 10px 12px; font-size: 15px; border: 1px solid #ccd; border-radius: 8px; }
   #know-bar { display: flex; gap: 8px; margin-top: 14px; }
   #know-bar button { flex: 1; padding: 10px; font-size: 14px; border: 1px solid #ccd; background: #fff; border-radius: 8px; cursor: pointer; }
@@ -110,7 +102,6 @@
       </div></div>
     <button class="ghost" id="btn-resume" style="display:none; margin-bottom:10px"></button>
     <button class="big" id="btn-start"></button>
-    <button class="dlbtn" id="btn-dl-start" style="display:none"></button>
   </div>
 
   <div id="screen-quiz" class="card" style="display:none">
@@ -150,16 +141,6 @@
       </div>
       <div class="hint" id="cmt-note" style="display:block"></div>
     </div>
-    <div class="report">
-      <button class="rep-toggle" id="rep-toggle">⚠ 문제 제보 (오타·오답·수정 요청)</button>
-      <div id="rep-box" style="display:none">
-        <textarea id="rep-text" placeholder="이상하거나 수정이 필요한 내용을 적어주세요"></textarea>
-        <div class="rep-row">
-          <button id="rep-send">제보 저장</button>
-          <span id="rep-msg"></span>
-        </div>
-      </div>
-    </div>
   </div>
 
   <div id="screen-end" class="card" style="display:none">
@@ -172,7 +153,6 @@
       <button class="ghost" id="btn-retry" style="display:none">틀린 문제 다시 풀기</button>
       <button class="big" id="btn-home">처음으로</button>
     </div>
-    <button class="dlbtn" id="btn-dl-end" style="display:none"></button>
   </div>
 </div>
 
@@ -443,7 +423,6 @@ function render() {
   $("q-result").className = "result"; $("nextbar").style.display = "none";
   $("cmt-sec").style.display = "none"; $("know-bar").style.display = "none";
   $("btn-prev").disabled = idx === 0;
-  $("rep-box").style.display = "none"; $("rep-text").value = ""; $("rep-msg").textContent = "";
   const opts = $("q-opts"); opts.innerHTML = ""; opts.className = "opts" + (q.t === "ox" ? " ox" : "");
   $("q-fill").style.display = "none"; $("q-hint").style.display = "none";
   if (q.t === "ox") {
@@ -524,10 +503,9 @@ function finish() {
     });
   }
   $("btn-retry").style.display = wrongs.length ? "block" : "none";
-  updateDlBtns();
 }
 $("btn-retry").onclick = () => { pool = window._wrongs.slice(); startRun(); };
-$("btn-home").onclick = () => { $("screen-end").style.display = "none"; $("screen-start").style.display = "block"; updateStartBtn(); updateDlBtns(); updateResumeBtn(); };
+$("btn-home").onclick = () => { $("screen-end").style.display = "none"; $("screen-start").style.display = "block"; updateStartBtn(); updateResumeBtn(); };
 
 // ---- 중간 저장 & 이어서 풀기 (닉네임별) ----
 const saveKey = () => "quiz-save:" + (($("nick-input").value.trim()) || "익명");
@@ -535,7 +513,7 @@ $("btn-save-exit").onclick = () => {
   try { localStorage.setItem(saveKey(), JSON.stringify({ poolIdx: pool.map(q => Q.indexOf(q)), answers, idx })); } catch {}
   try { sessionStorage.removeItem("quiz-session"); } catch {}
   $("screen-quiz").style.display = "none"; $("screen-start").style.display = "block";
-  updateStartBtn(); updateDlBtns(); updateResumeBtn();
+  updateStartBtn(); updateResumeBtn();
 };
 function updateResumeBtn() {
   let s = null;
@@ -557,58 +535,6 @@ $("btn-resume").onclick = () => {
   $("screen-quiz").style.display = "block"; render();
 };
 updateStartBtn();
-
-// ---- 문제 제보 ----
-const REP_KEY = "quiz-reports";
-let memReports = null; // localStorage 차단 환경 폴백 (세션 내에서만 유지)
-const getReports = () => { if (memReports) return memReports; try { return JSON.parse(localStorage.getItem(REP_KEY)) || []; } catch { memReports = []; return memReports; } };
-const saveReports = reps => { try { localStorage.setItem(REP_KEY, JSON.stringify(reps)); } catch { memReports = reps; } };
-$("rep-toggle").onclick = () => {
-  const box = $("rep-box");
-  box.style.display = box.style.display === "none" ? "block" : "none";
-  if (box.style.display === "block") $("rep-text").focus();
-};
-$("rep-send").onclick = () => {
-  const note = $("rep-text").value.trim(); if (!note) return;
-  const q = pool[idx];
-  const reps = getReports();
-  reps.push({ time: new Date().toLocaleString("ko-KR"), cat: q.c, src: q.s, type: typeName[q.t], q: q.q, note });
-  saveReports(reps);
-  $("rep-text").value = "";
-  $("rep-msg").textContent = "저장됨 ✓ (총 " + reps.length + "건)";
-  updateDlBtns();
-};
-function updateDlBtns() {
-  const n = getReports().length;
-  ["btn-dl-start", "btn-dl-end"].forEach(id => {
-    const b = $(id);
-    b.style.display = n ? "block" : "none";
-    b.textContent = "제보 내역 .md 다운로드 (" + n + "건)";
-  });
-}
-async function downloadReports() {
-  const reps = getReports();
-  let md = "# 문제은행 제보 내역\n\n총 " + reps.length + "건\n";
-  reps.forEach((r, i) => {
-    md += "\n---\n\n## " + (i + 1) + ". [" + r.cat + "·" + r.src + "·" + r.type + "] " + r.time + "\n\n";
-    md += "**문제:** " + r.q.replace(/\n/g, " / ") + "\n\n";
-    md += "**제보 내용:** " + r.note + "\n";
-  });
-  // 아티팩트 뷰어에서는 downloads capability로만 저장 가능
-  let dl = null;
-  try { if (window.claude && window.claude.use) dl = await window.claude.use("downloads"); } catch {}
-  if (dl) {
-    try { await dl.save({ filename: "문제제보.md", data: md }); } catch (err) { if (err && err.code !== "declined") alert("저장에 실패했습니다. 잠시 후 다시 시도해주세요."); }
-    return;
-  }
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([md], { type: "text/markdown;charset=utf-8" }));
-  a.download = "문제제보.md";
-  a.click(); URL.revokeObjectURL(a.href);
-}
-$("btn-dl-start").onclick = downloadReports;
-$("btn-dl-end").onclick = downloadReports;
-updateDlBtns();
 
 // ---- 댓글 (아티팩트 공유 저장: comments.json) ----
 let artNS = null, comments = {}, cmtReady = false, apiMode = false, cmtRefreshing = false;
