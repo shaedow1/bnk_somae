@@ -65,6 +65,11 @@
   #rep-send { padding: 8px 16px; background: #b45309; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
   #rep-msg { font-size: 13px; color: #15803d; }
   .dlbtn { width: 100%; padding: 12px; font-size: 14px; background: #fff; color: #b45309; border: 1px solid #b45309; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+  .nickbox { width: 100%; padding: 10px 12px; font-size: 15px; border: 1px solid #ccd; border-radius: 8px; }
+  #know-bar { display: flex; gap: 8px; margin-top: 14px; }
+  #know-bar button { flex: 1; padding: 10px; font-size: 14px; border: 1px solid #ccd; background: #fff; border-radius: 8px; cursor: pointer; }
+  #know-bar button.on-yes { background: #e7f7ec; border-color: #16a34a; color: #15803d; font-weight: bold; }
+  #know-bar button.on-no { background: #fff7e6; border-color: #d97706; color: #b45309; font-weight: bold; }
   #cmt-sec { margin-top: 18px; border-top: 1px solid #e5e8ee; padding-top: 14px; }
   .cmt-title { font-weight: bold; font-size: 15px; margin-bottom: 10px; }
   .cmt-title span { color: #667; font-weight: normal; font-size: 13px; }
@@ -85,6 +90,8 @@
   <div class="sub">2026 기출 50문항 + 신규 100문항 (정리본 기반)</div>
 
   <div id="screen-start" class="card">
+    <div class="row"><span class="lbl">닉네임 (학습기록·댓글에 사용)</span>
+      <input type="text" id="nick-input" class="nickbox" placeholder="닉네임을 입력하세요" maxlength="20"></div>
     <div class="row"><span class="lbl">과목</span>
       <div class="seg" id="f-cat">
         <button data-v="전체" class="on">전체</button><button data-v="여신">여신</button><button data-v="외환">외환</button>
@@ -96,6 +103,10 @@
     <div class="row"><span class="lbl">출제 순서</span>
       <div class="seg" id="f-ord">
         <button data-v="랜덤" class="on">랜덤</button><button data-v="순서대로">순서대로</button>
+      </div></div>
+    <div class="row"><span class="lbl">✔ 알고 있음 표시한 문제</span>
+      <div class="seg" id="f-known">
+        <button data-v="제외" class="on">제외</button><button data-v="포함">포함</button>
       </div></div>
     <button class="big" id="btn-start"></button>
     <button class="dlbtn" id="btn-dl-start" style="display:none"></button>
@@ -121,6 +132,10 @@
       <div class="ans" id="r-ans"></div>
       <div class="expl" id="r-expl"></div>
       <div class="ref" id="r-ref"></div>
+    </div>
+    <div id="know-bar" style="display:none">
+      <button id="know-yes">✔ 알고 있음 · 다음부터 제외</button>
+      <button id="know-no">📖 학습중</button>
     </div>
     <div class="nextbar" id="nextbar"><button class="big" id="btn-next">다음 문제</button></div>
     <div id="cmt-sec" style="display:none">
@@ -324,8 +339,10 @@ const Q = [
 
 // ---- 앱 ----
 const $ = id => document.getElementById(id);
-let filters = { cat: "전체", src: "전체", ord: "랜덤" };
+let filters = { cat: "전체", src: "전체", ord: "랜덤", known: "제외" };
 let pool = [], idx = 0, answers = [];
+let known = new Set(); // 현재 닉네임의 "알고 있음" 문제 키
+const qkey = q => { let h = 5381; const s = q.c + "|" + q.q; for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) >>> 0; return "q" + h.toString(36); };
 
 function segInit(id, key) {
   $(id).querySelectorAll("button").forEach(b => b.onclick = () => {
@@ -333,10 +350,10 @@ function segInit(id, key) {
     b.classList.add("on"); filters[key] = b.dataset.v; updateStartBtn();
   });
 }
-segInit("f-cat", "cat"); segInit("f-src", "src"); segInit("f-ord", "ord");
+segInit("f-cat", "cat"); segInit("f-src", "src"); segInit("f-ord", "ord"); segInit("f-known", "known");
 
 function filtered() {
-  return Q.filter(q => (filters.cat === "전체" || q.c === filters.cat) && (filters.src === "전체" || q.s === filters.src));
+  return Q.filter(q => (filters.cat === "전체" || q.c === filters.cat) && (filters.src === "전체" || q.s === filters.src) && (filters.known === "포함" || !known.has(qkey(q))));
 }
 function updateStartBtn() { $("btn-start").textContent = "시험 시작 (" + filtered().length + "문항)"; }
 
@@ -358,7 +375,7 @@ function render() {
   $("q-prog").textContent = (idx + 1) + " / " + pool.length;
   $("q-text").textContent = q.q;
   $("q-result").className = "result"; $("nextbar").style.display = "none";
-  $("cmt-sec").style.display = "none";
+  $("cmt-sec").style.display = "none"; $("know-bar").style.display = "none";
   $("btn-prev").disabled = idx === 0;
   $("rep-box").style.display = "none"; $("rep-text").value = ""; $("rep-msg").textContent = "";
   const opts = $("q-opts"); opts.innerHTML = ""; opts.className = "opts" + (q.t === "ox" ? " ox" : "");
@@ -412,6 +429,8 @@ function showResult(ok, given) {
   $("nextbar").style.display = "block";
   $("btn-next").textContent = idx + 1 === pool.length ? "결과 보기" : "다음 문제";
   $("cmt-sec").style.display = "block";
+  $("know-bar").style.display = "flex";
+  updateKnowBar();
   renderComments();
   refreshComments(); // 웹서버 모드: 다른 사람이 새로 단 댓글 반영
 }
@@ -498,7 +517,6 @@ updateDlBtns();
 
 // ---- 댓글 (아티팩트 공유 저장: comments.json) ----
 let artNS = null, comments = {}, cmtReady = false, apiMode = false, cmtRefreshing = false;
-const qkey = q => { let h = 5381; const s = q.c + "|" + q.q; for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) >>> 0; return "q" + h.toString(36); };
 async function initComments() {
   try { if (window.claude && window.claude.use) artNS = await window.claude.use("artifact"); } catch {}
   if (artNS) {
@@ -510,6 +528,7 @@ async function initComments() {
   }
   cmtReady = true;
   if ($("cmt-sec").style.display === "block") renderComments();
+  loadKnown(); // apiMode 확정 후 서버 학습기록 병합
 }
 async function refreshComments() {
   if (!apiMode || cmtRefreshing) return;
@@ -589,6 +608,51 @@ $("cmt-send").onclick = async () => {
   }
   $("cmt-send").disabled = false;
 };
+
+// ---- 닉네임 & 알고 있음/학습중 (닉네임별 학습기록) ----
+const nick = () => ($("nick-input").value.trim() || "익명");
+const knownStoreKey = () => "quiz-known:" + nick();
+function loadKnownLocal() {
+  try { known = new Set(JSON.parse(localStorage.getItem(knownStoreKey())) || []); } catch { known = new Set(); }
+}
+function saveKnownLocal() { try { localStorage.setItem(knownStoreKey(), JSON.stringify([...known])); } catch {} }
+async function loadKnown() {
+  loadKnownLocal();
+  if (apiMode) {
+    try {
+      const r = await fetch("/api/marks?name=" + encodeURIComponent(nick()), { cache: "no-store" });
+      if (r.ok) { ((await r.json()).known || []).forEach(k => known.add(k)); saveKnownLocal(); }
+    } catch {}
+  }
+  updateStartBtn();
+  if ($("know-bar").style.display === "flex") updateKnowBar();
+}
+let markTimer = null;
+function saveKnown() {
+  saveKnownLocal(); updateStartBtn();
+  if (!apiMode) return;
+  clearTimeout(markTimer);
+  // 연속 클릭을 모아 2초 후 한 번에 서버 저장
+  markTimer = setTimeout(() => {
+    fetch("/api/marks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: nick(), known: [...known] }) }).catch(() => {});
+  }, 2000);
+}
+function updateKnowBar() {
+  const q = pool[idx]; if (!q) return;
+  const isKnown = known.has(qkey(q));
+  $("know-yes").className = isKnown ? "on-yes" : "";
+  $("know-no").className = isKnown ? "" : "on-no";
+}
+$("know-yes").onclick = () => { known.add(qkey(pool[idx])); saveKnown(); updateKnowBar(); };
+$("know-no").onclick = () => { known.delete(qkey(pool[idx])); saveKnown(); updateKnowBar(); };
+try { $("nick-input").value = localStorage.getItem("quiz-nick") || ""; } catch {}
+$("nick-input").addEventListener("change", () => {
+  try { localStorage.setItem("quiz-nick", nick()); } catch {}
+  $("cmt-name").value = $("nick-input").value.trim();
+  loadKnown(); // 닉네임이 바뀌면 해당 닉네임의 학습기록 로드
+});
+loadKnownLocal();
+updateStartBtn();
 
 // ---- 세션 복원 (댓글 등록 시 다른 뷰가 새로고침되므로 진도 보존) ----
 function saveSession() {
