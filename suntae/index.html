@@ -48,7 +48,8 @@ const typeNames={ox:"OX",mc:"객관식",fill:"단답형",essay:"서술형"};
 const key=q=>`${q.exam}-${q.n}`;
 function setText(el,value){el.textContent=value??""}
 async function init(){
-  const response=await fetch("./questions.json");if(!response.ok)throw new Error("문제은행 파일을 불러오지 못했습니다.");bank=await response.json();
+  const basePath=location.pathname.replace(/\/index\.html$/i,"").replace(/\/?$/, "/");
+  const response=await fetch(`${basePath}questions.json`);if(!response.ok)throw new Error(`문제은행 파일을 불러오지 못했습니다. (${response.status})`);bank=await response.json();
   [...new Set(bank.map(q=>q.exam))].sort((a,b)=>a-b).forEach(exam=>{const option=document.createElement("option");option.value=exam;option.textContent=`제${exam}회 · 45문항`;$("exam").append(option)});
   $("start").addEventListener("click",start);$("prev").addEventListener("click",()=>move(-1));$("next").addEventListener("click",()=>move(1));$("again").addEventListener("click",start);$("home").addEventListener("click",home);
 }
@@ -65,7 +66,7 @@ function showAnswer(q,saved){const box=document.createElement("div");box.classNa
 function showFeedback(q,correct){const box=$("feedback");box.replaceChildren();box.classList.remove("hidden");const heading=document.createElement("strong");heading.textContent=correct?"정답입니다":"정답을 확인해 보세요";box.append(heading);if(q.type==="ox"||q.type==="mc"){const ans=document.createElement("p");ans.textContent=`정답: ${q.type==="ox"?q.a:`${"①②③④"[q.a]} ${q.o[q.a]}`}`;box.append(ans)}if(q.e){const explanation=document.createElement("p");explanation.textContent=q.e;box.append(explanation)}if(q.r){const ref=document.createElement("div");ref.className="reference";ref.textContent=`참고: ${q.r}`;box.append(ref)}}
 function finish(){const objective=pool.filter(q=>q.type==="ox"||q.type==="mc"),subj=pool.filter(q=>q.type==="fill"||q.type==="essay");const got=objective.filter(q=>marks.get(key(q))?.correct).length;const rated=subj.filter(q=>marks.get(key(q))?.known!==undefined),selfGot=rated.filter(q=>marks.get(key(q)).known).length;$("quiz").classList.add("hidden");$("end").classList.remove("hidden");setText($("score"),`${got} / ${objective.length}`);setText($("score-detail"),`객관식·OX 정답 · 단답형/서술형 자기평가 ${selfGot} / ${rated.length} (평가 ${subj.length}문항)`)}
 function home(){$("end").classList.add("hidden");$("quiz").classList.add("hidden");$("setup").classList.remove("hidden")}
-init().catch(error=>{setText($("setup"),error.message)});
+init().catch(error=>{setText($("setup"),error.message||"문제은행 파일을 불러오지 못했습니다.")});
 </script>
 </body>
 </html>
