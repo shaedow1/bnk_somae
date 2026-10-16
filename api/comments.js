@@ -4,10 +4,10 @@ const REPO = "shaedow1/bnk_somae";
 const BRANCH = "db";
 const FILE = "data/comments.json";
 
-const gh = (path, opts = {}) => fetch("https://api.github.com" + path, {
+const gh = (path, opts = {}, useToken = true) => fetch("https://api.github.com" + path, {
   ...opts,
   headers: {
-    "Authorization": "Bearer " + process.env.GITHUB_TOKEN,
+    ...(useToken && process.env.GITHUB_TOKEN ? { "Authorization": "Bearer " + process.env.GITHUB_TOKEN } : {}),
     "Accept": "application/vnd.github+json",
     "User-Agent": "bnk-somae-comments",
     ...(opts.headers || {}),
@@ -15,7 +15,10 @@ const gh = (path, opts = {}) => fetch("https://api.github.com" + path, {
 });
 
 async function readFile() {
-  const r = await gh(`/repos/${REPO}/contents/${FILE}?ref=${BRANCH}&t=` + Date.now());
+  const path = `/repos/${REPO}/contents/${FILE}?ref=${BRANCH}&t=${Date.now()}`;
+  let r = await gh(path);
+  // The comments branch is public. If the configured token has expired, retry the read anonymously.
+  if (r.status === 401 || r.status === 403) r = await gh(path, {}, false);
   if (r.status === 404) return { data: {}, sha: null };
   if (!r.ok) throw new Error("github read " + r.status);
   const j = await r.json();
@@ -24,13 +27,13 @@ async function readFile() {
 
 module.exports = async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
-  if (!process.env.GITHUB_TOKEN) return res.status(500).json({ error: "GITHUB_TOKEN env var not set" });
   try {
     if (req.method === "GET") {
       const { data } = await readFile();
       return res.status(200).json(data);
     }
     if (req.method === "POST") {
+      if (!process.env.GITHUB_TOKEN) return res.status(503).json({ error: "댓글 등록용 GitHub 토큰이 설정되지 않았습니다. Vercel의 GITHUB_TOKEN 환경 변수를 설정해주세요." });
       const { k, name, text } = req.body || {};
       if (typeof k !== "string" || !/^q[0-9a-z]{1,16}$/.test(k)) return res.status(400).json({ error: "bad key" });
       const nm = String(name || "익명").trim().slice(0, 20) || "익명";
@@ -52,6 +55,7 @@ module.exports = async (req, res) => {
           body: JSON.stringify(body),
         });
         if (w.ok) return res.status(200).json({ list: data[k] });
+        if (w.status === 401 || w.status === 403) return res.status(503).json({ error: "댓글 등록용 GitHub 토큰이 만료되었거나 쓰기 권한이 없습니다. Vercel의 GITHUB_TOKEN을 갱신해주세요." });
         if (w.status !== 409 && w.status !== 422) {
           const detail = await w.text().catch(() => "");
           throw new Error("github write " + w.status + ": " + detail.slice(0, 300));
